@@ -1,8 +1,8 @@
 const multer = require('multer');
 const path = require('path');
 
-// مكان تخزين الملفات
-// Define storage configuration
+
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, "uploads/");
@@ -12,7 +12,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// Define file filter for image validation
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|gif/;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -24,10 +23,9 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Initialize multer with storage and file filter
 const upload = multer({
   storage,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
+  limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter,
 });
 

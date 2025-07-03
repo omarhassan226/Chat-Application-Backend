@@ -5,13 +5,10 @@ const auth = require("../middlewares/auth");
 const upload = require("../middlewares/upload");
 
 
-
-
-// إنشاء غرفة شات
 router.post("/create-room", async (req, res) => {
   const room = await ChatRoom.create({
     name: req.body.name,
-    members: req.body.members, // ← array of user IDs
+    members: req.body.members, 
   });
   res.json(room);
 });
@@ -20,11 +17,8 @@ router.post("/create-room", async (req, res) => {
 
 
 
-
-// 🔁 1. إرسال رسالة (جماعية أو خاصة):
 router.post("/send", auth, async (req, res) => {
   const { senderId, receiverId, roomId, text } = req.body;
-  // تحديد النوع: خاص ولا جماعي
   const isGroup = !!roomId;
   const message = await Message.create({
     senderId,
@@ -40,7 +34,7 @@ router.post("/send", auth, async (req, res) => {
 
 
 
-// الحصول على رسائل الغرفة
+
 router.get("/room/:roomId/messages", auth, async (req, res) => {
   const messages = await Message.find({ roomId: req.params.roomId });
   res.json(messages);
@@ -50,7 +44,6 @@ router.get("/room/:roomId/messages", auth, async (req, res) => {
 
 
 
-//📩 2. جلب الرسائل الخاصة بين شخصين
 router.get("/private/:user1/:user2", auth, async (req, res) => {
   const { user1, user2 } = req.params;
 

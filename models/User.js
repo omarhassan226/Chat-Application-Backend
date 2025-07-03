@@ -6,7 +6,7 @@ const userSchema = new mongoose.Schema({
   image: { type: String },
   isOnline: { type: Boolean, default: false },
   lastSeen: { type: Date, default: Date.now },
-  blockedUsers: [{ type: String }] // ← قائمة بالـ user IDs اللي أنا حظرتهم
+  blockedUsers: [{ type: String }] 
 });
 
 module.exports = mongoose.model("User", userSchema);
