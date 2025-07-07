@@ -3,6 +3,7 @@ const Message = require("../models/Message");
 const ChatRoom = require("../models/ChatRoom");
 const auth = require("../middlewares/auth");
 const upload = require("../middlewares/upload");
+const User = require("../models/User");
 
 
 router.post("/create-room", async (req, res) => {
@@ -63,11 +64,18 @@ router.get("/private/:user1/:user2", auth, async (req, res) => {
 
 
 router.get("/me", auth, async (req, res) => {
-  res.json({
-    message: "User data from token",
-    user: req.user 
-  });
+  try {
+    const user = await User.findById(req.user.id).select("-password").lean();
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.json({ message: "User data from token", user });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
 });
+
 
 
 
@@ -191,6 +199,52 @@ router.post("/send-file", auth, upload.single("file"), async (req, res) => {
 
   res.json(message);
 });
+
+
+
+
+router.get("/users-filter", auth, async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q) {
+      return res.status(400).json({ message: "Query parameter 'q' is required" });
+    }
+
+    const regex = new RegExp(q, "i"); 
+
+    const users = await User.find({
+      $or: [
+        { username: regex },
+        { email: regex },
+        { phone: regex }
+      ]
+    })
+    .select("-password")  
+    .lean();
+
+    res.json(users);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+
+
+
+router.get("/users", auth, async (req, res) => {
+  try {
+    const users = await User.find({})
+      .select("-password")
+      .lean();
+
+    res.json(users);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
 
 
 module.exports = router;

@@ -13,6 +13,8 @@ module.exports = function (server) {
   io.on("connection", async (socket) => {
     console.log("Connected:", socket.id);
     const userId = socket.handshake.query.userId;
+    console.log(userId);
+    
 
     // 🟢 عند الاتصال
     if (userId) {
