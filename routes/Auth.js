@@ -12,7 +12,6 @@ router.post(
     try {
       const { username, email, phone, password } = req.body;
 
-      // Validate required fields
       if (!username || !password || (!email && !phone)) {
         return res.status(400).json({
           message: "username, password, and at least one of email or phone is required",
@@ -34,8 +33,8 @@ router.post(
           existing.username === username
             ? "Username"
             : existing.email === email
-            ? "Email"
-            : "Phone";
+              ? "Email"
+              : "Phone";
         return res.status(400).json({ message: `${field} already exists` });
       }
 

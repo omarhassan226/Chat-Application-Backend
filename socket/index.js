@@ -10,10 +10,15 @@ module.exports = function (server) {
     },
   });
 
+  const userSockets = new Map();
+
   io.on("connection", async (socket) => {
     console.log("Connected:", socket.id);
     const userId = socket.handshake.auth.userId;
     console.log(userId);
+    if (userId) {
+      userSockets.set(userId, socket.id);
+    }
 
 
     // 🟢 عند الاتصال
@@ -29,34 +34,42 @@ module.exports = function (server) {
     });
 
     // ⌨️ لما المستخدم يكتب
-    socket.on("typing", ({ roomId, userId }) => {
-      socket.to(roomId).emit("userTyping", { userId });
-    });
-
-    // 🛑 لما المستخدم يوقف كتابة
-    socket.on("stopTyping", ({ roomId, userId }) => {
-      socket.to(roomId).emit("userStoppedTyping", { userId });
-    });
-
-    // ✉️ إرسال رسالة
-    socket.on("sendMessage", async (data) => {
-      const { senderId, receiverId, roomId } = data;
-
-      if (roomId) {
-        // جروب شات
-        socket.to(roomId).emit("receiveMessage", data);
-      } else if (receiverId) {
-        // شات خاص - نتحقق هل المستقبل حاجب المرسل؟
-        const receiver = await User.findById(receiverId).lean();
-        if (receiver?.blockedUsers?.includes(senderId)) {
-          console.log(`🚫 رسالة مرفوضة: ${senderId} محظور من ${receiverId}`);
-          return;
-        }
-
-        // لو مش محظور، نبعته له
-        io.emit("receivePrivateMessage", data); // في نسخة متقدمة تقدر تبعته لمجرد receiver socket.id
+    socket.on('typing', ({ to, userId }) => {
+      console.log('Typing from', userId, 'to', to);
+      const targetSocketId = userSockets.get(to);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('typing', { from: userId });
       }
     });
+
+    socket.on('stopTyping', ({ to, userId }) => {
+      const targetSocketId = userSockets.get(to);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('stopTyping', { from: userId });
+      }
+    });
+
+
+    // ✉️ إرسال رسالة
+    socket.on('sendMessage', async (data) => {
+      const { senderId, receiverId, roomId, text, timestamp } = data;
+      // Save message to database
+      const message = await Message.create({
+        senderId,
+        receiverId,
+        roomId,
+        text,
+        timestamp,
+        isGroup: !!roomId
+      });
+      // Emit the message with timestamp
+      if (roomId) {
+        socket.to(roomId).emit('receiveMessage', message);
+      } else {
+        io.emit('receivePrivateMessage', message);
+      }
+    });
+
 
     // 👁️‍🗨️ حدث عند قراءة الرسالة
     socket.on("messageRead", async ({ messageId, readerId }) => {
