@@ -9,7 +9,7 @@ const User = require("../models/User");
 router.post("/create-room", async (req, res) => {
   const room = await ChatRoom.create({
     name: req.body.name,
-    members: req.body.members, 
+    members: req.body.members,
   });
   res.json(room);
 });
@@ -18,19 +18,24 @@ router.post("/create-room", async (req, res) => {
 
 
 
-router.post("/send", auth, async (req, res) => {
-  const { senderId, receiverId, roomId, text } = req.body;
-  const isGroup = !!roomId;
-  const message = await Message.create({
-    senderId,
-    receiverId,
-    roomId,
-    text,
-    isGroup
-  });
-  res.json(message);
+router.post("/send", auth, upload.single('file'), async (req, res) => {
+  try {
+    const { senderId, receiverId, roomId, text } = req.body;
+    const isGroup = !!roomId;
+    const message = await Message.create({
+      senderId,
+      receiverId,
+      roomId,
+      text,
+      isGroup,
+      fileUrl: `/uploads/${req.file.filename}`,
+      // fileType: req.file.mimetype,
+    });
+    res.json(message);
+  } catch (error) {
+    res.status(500).json({ error: err.message });
+  }
 });
-
 
 
 
@@ -210,7 +215,7 @@ router.get("/users-filter", auth, async (req, res) => {
       return res.status(400).json({ message: "Query parameter 'q' is required" });
     }
 
-    const regex = new RegExp(q, "i"); 
+    const regex = new RegExp(q, "i");
 
     const users = await User.find({
       $or: [
@@ -219,8 +224,8 @@ router.get("/users-filter", auth, async (req, res) => {
         { phone: regex }
       ]
     })
-    .select("-password")  
-    .lean();
+      .select("-password")
+      .lean();
 
     res.json(users);
   } catch (err) {

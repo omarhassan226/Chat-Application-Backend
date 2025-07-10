@@ -1,6 +1,8 @@
 const { Server } = require("socket.io");
 const User = require("../models/User");
 const Message = require("../models/Message");
+const fs = require('fs');
+const path = require('path');
 
 module.exports = function (server) {
   const io = new Server(server, {
@@ -60,7 +62,7 @@ module.exports = function (server) {
         roomId,
         text,
         timestamp,
-        isGroup: !!roomId
+        isGroup: !!roomId,
       });
       // Emit the message with timestamp
       if (roomId) {
@@ -69,6 +71,51 @@ module.exports = function (server) {
         io.emit('receivePrivateMessage', message);
       }
     });
+
+
+    socket.on('uploadMessage', async ({ metadata, buffer }) => {
+      const {
+        senderId,
+        receiverId,
+        roomId,
+        text = '',
+        filename,
+        mimetype
+      } = metadata;
+
+      const safe = filename.replace(/\s+/g, '_');
+      const cleanName = `${Date.now()}-${safe}`;
+      const savePath = path.join(__dirname, '../uploads', cleanName);
+
+      fs.writeFileSync(savePath, Buffer.from(buffer));
+
+      // Construct fileUrl manually (adjust host/port accordingly)
+      const hostUrl = 'http://localhost:5000'; // your server address here
+      const fileUrl = `${hostUrl}/uploads/${cleanName}`;
+
+      // Extract just the filename from fileUrl
+      const fileNameOnly = path.basename(fileUrl);
+
+      const message = await Message.create({
+        senderId,
+        receiverId,
+        roomId,
+        text,
+        isGroup: !!roomId,
+        fileUrl,
+        fileType: mimetype,
+        timestamp: new Date(),
+        fileName: fileNameOnly
+      });
+
+      if (roomId) socket.to(roomId).emit('receiveMessage', message);
+      else {
+        io.emit('receivePrivateMessage', message);
+      }
+    });
+
+
+
 
 
     // 👁️‍🗨️ حدث عند قراءة الرسالة
