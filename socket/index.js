@@ -64,6 +64,8 @@ module.exports = function (server) {
         timestamp,
         isGroup: !!roomId,
       });
+      console.log(roomId);
+
       // Emit the message with timestamp
       if (roomId) {
         socket.to(roomId).emit('receiveMessage', message);
@@ -72,45 +74,32 @@ module.exports = function (server) {
       }
     });
 
-
     socket.on('uploadMessage', async ({ metadata, buffer }) => {
-      const {
-        senderId,
-        receiverId,
-        roomId,
-        text = '',
-        filename,
-        mimetype
-      } = metadata;
+      const { senderId, receiverId, roomId, text = '', filename, mimetype } = metadata;
+      console.log(roomId);
 
+      // Save file to disk
       const safe = filename.replace(/\s+/g, '_');
       const cleanName = `${Date.now()}-${safe}`;
       const savePath = path.join(__dirname, '../uploads', cleanName);
-
       fs.writeFileSync(savePath, Buffer.from(buffer));
 
-      // Construct fileUrl manually (adjust host/port accordingly)
-      const hostUrl = 'http://localhost:5000'; // your server address here
+      const hostUrl = 'http://localhost:5000';
       const fileUrl = `${hostUrl}/uploads/${cleanName}`;
-
-      // Extract just the filename from fileUrl
       const fileNameOnly = path.basename(fileUrl);
 
       const message = await Message.create({
-        senderId,
-        receiverId,
-        roomId,
-        text,
-        isGroup: !!roomId,
-        fileUrl,
-        fileType: mimetype,
-        timestamp: new Date(),
-        fileName: fileNameOnly
+        senderId, receiverId, roomId, text,
+        isGroup: !!roomId, fileUrl, fileType: mimetype,
+        timestamp: new Date(), fileName: fileNameOnly
       });
 
-      if (roomId) socket.to(roomId).emit('receiveMessage', message);
-      else {
-        io.emit('receivePrivateMessage', message);
+      if (roomId) {
+        socket.to(roomId).emit('receiveMessage', message);
+        socket.emit('receiveMessage', message); // also to sender
+      } else {
+        io.to(receiverId).emit('receivePrivateMessage', message);
+        io.to(senderId).emit('receivePrivateMessage', message);
       }
     });
 
