@@ -12,11 +12,11 @@ router.post(
     try {
       const { username, email, phone, password } = req.body;
 
-      if (!username || !password || (!email && !phone)) {
-        return res.status(400).json({
-          message: "username, password, and at least one of email or phone is required",
-        });
-      }
+      // if (!username || !password || (!email && !phone)) {
+      //   return res.status(400).json({
+      //     message: "username, password, and at least one of email or phone is required",
+      //   });
+      // }
 
       if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
         return res.status(400).json({ message: "Invalid email format" });
@@ -28,15 +28,15 @@ router.post(
       const existing = await User.findOne({
         $or: [{ username }, { email }, { phone }],
       });
-      if (existing) {
-        const field =
-          existing.username === username
-            ? "Username"
-            : existing.email === email
-              ? "Email"
-              : "Phone";
-        return res.status(400).json({ message: `${field} already exists` });
-      }
+      // if (existing) {
+      //   const field =
+      //     existing.username === username
+      //       ? "Username"
+      //       : existing.email === email
+      //         ? "Email"
+      //         : "Phone";
+      //   return res.status(400).json({ message: `${field} already exists` });
+      // }
 
       const hashedPassword = await bcrypt.hash(password, 10);
 

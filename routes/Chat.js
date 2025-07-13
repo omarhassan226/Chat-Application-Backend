@@ -4,15 +4,7 @@ const ChatRoom = require("../models/ChatRoom");
 const auth = require("../middlewares/auth");
 const upload = require("../middlewares/upload");
 const User = require("../models/User");
-
-
-router.post("/create-room", async (req, res) => {
-  const room = await ChatRoom.create({
-    name: req.body.name,
-    members: req.body.members,
-  });
-  res.json(room);
-});
+const mongoose = require('mongoose');
 
 
 
@@ -41,11 +33,49 @@ router.post("/send", auth, upload.single('file'), async (req, res) => {
 
 
 
-router.get("/room/:roomId/messages", auth, async (req, res) => {
-  const messages = await Message.find({ roomId: req.params.roomId });
+// GET /chat/room/:roomId/messages
+router.get('/room/:roomId/messages', auth, async (req, res) => {
+  const { roomId } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(roomId)) {
+    return res.status(400).json({ error: 'Invalid roomId' });
+  }
+
+  const messages = await Message.find({ roomId }).sort({ timestamp: 1 }).lean();
   res.json(messages);
 });
 
+
+
+
+
+// POST /chat/create-room
+router.post('/create-room', auth, async (req, res) => {
+  const { memberIds, name } = req.body;
+
+  if (!Array.isArray(memberIds) || memberIds.length < 2) {
+    return res.status(400).json({ error: 'memberIds must be an array of at least two user IDs' });
+  }
+
+  const isGroup = memberIds.length > 2;
+  const roomName = isGroup ? name : null;
+
+  // Try to find existing room
+  let room = await ChatRoom.findOne({
+    isGroup,
+    members: { $all: memberIds, $size: memberIds.length },
+  });
+
+  // If not found, create one
+  if (!room) {
+    room = await ChatRoom.create({
+      name: roomName,
+      members: memberIds,
+      isGroup,
+    });
+  }
+
+  res.json({ roomId: room._id });
+});
 
 
 

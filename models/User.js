@@ -3,11 +3,11 @@ const { Schema } = mongoose;
 
 const userSchema = new Schema({
   username: { type: String, unique: true, required: true },
-  
+
   email: {
     type: String,
     unique: true,
-    required: true,
+    // required: true,
     lowercase: true,
     trim: true
   },
@@ -15,7 +15,7 @@ const userSchema = new Schema({
   phone: {
     type: String,
     unique: true,
-    required: true,
+    // required: true,
     trim: true,
   },
 
