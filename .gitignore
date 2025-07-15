@@ -22,6 +22,3 @@ out/
 .idea/
 *.sublime-workspace
 *.sublime-project
-
-# Uploads or generated content
-uploads/
