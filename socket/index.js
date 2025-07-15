@@ -131,7 +131,7 @@ module.exports = function (server) {
         let room;
         if (isGroup) {
           room = await ChatRoom.findById(roomId);
-          if (!room) throw new Error('Group room not found');
+          // if (!room) throw new Error('Group room not found');
         } else {
           const userIds = [senderId, receiverId];
           room = await createOrGetRoom(userIds, false);
@@ -149,7 +149,7 @@ module.exports = function (server) {
         const message = await Message.create({
           senderId,
           receiverId,
-          roomId: room._id,
+          roomId: roomId,
           text,
           isGroup,
           fileUrl,
@@ -157,9 +157,11 @@ module.exports = function (server) {
           timestamp: new Date(),
           fileName: fileNameOnly,
         });
+        console.log('isGroup: ', isGroup);
+
 
         if (isGroup) {
-          socket.to(room._id).emit('receiveMessage', message);
+          socket.to(roomId).emit('receiveMessage', message);
           socket.emit('receiveMessage', message);
         } else {
           io.to(receiverId).emit('receivePrivateMessage', message);
