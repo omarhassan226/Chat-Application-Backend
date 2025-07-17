@@ -9,10 +9,8 @@ const generateRoomId = (userIds) => {
   return userIds.map(id => id.toString()).sort().join('-');
 };
 
-// Find existing room or create a new one
 const createOrGetRoom = async (userIds, isGroup = false) => {
   const roomId = isGroup ? new mongoose.Types.ObjectId() : generateRoomId(userIds);
-
   let room = await ChatRoom.findById(roomId);
   if (!room) {
     room = await ChatRoom.create({
@@ -51,17 +49,10 @@ module.exports = function (server) {
       io.emit("userStatus", { userId, isOnline: true });
     }
 
-    // 🏠 دخول غرفة
-    // socket.on("joinRoom", ({ roomId, userId }) => {
-    //   socket.join(roomId);
-    //   io.to(roomId).emit("userJoined", userId);
-    // });
-
     socket.on('joinRoom', ({ roomId }) => {
       socket.join(roomId);
     });
 
-    // ⌨️ لما المستخدم يكتب
     socket.on('typing', ({ to, userId }) => {
       console.log('Typing from', userId, 'to', to);
       const targetSocketId = userSockets.get(to);
@@ -77,23 +68,16 @@ module.exports = function (server) {
       }
     });
 
-
-    // ✉️ إرسال رسالة
     socket.on('sendMessage', async (data) => {
       const { senderId, receiverId, roomId, text, timestamp } = data;
       const isGroup = !!roomId;
-
       try {
         let room;
         if (isGroup) {
           console.log(isGroup);
-
           const room = await ChatRoom.findById(roomId.toString());
           console.log(room);
           console.log(roomId);
-
-
-          // if (!room) throw new Error('Group room not found');
         } else {
           const userIds = [senderId, receiverId];
           room = await createOrGetRoom(userIds, false);
@@ -121,31 +105,24 @@ module.exports = function (server) {
       }
     });
 
-
-
     socket.on('uploadMessage', async ({ metadata, buffer }) => {
       const { senderId, receiverId, roomId, text = '', filename, mimetype } = metadata;
       const isGroup = !!roomId;
-
       try {
         let room;
         if (isGroup) {
           room = await ChatRoom.findById(roomId);
-          // if (!room) throw new Error('Group room not found');
         } else {
           const userIds = [senderId, receiverId];
           room = await createOrGetRoom(userIds, false);
         }
-
         const safe = filename.replace(/\s+/g, '_');
         const cleanName = `${Date.now()}-${safe}`;
         const savePath = path.join(__dirname, '../uploads', cleanName);
         fs.writeFileSync(savePath, Buffer.from(buffer));
-
         const hostUrl = 'http://localhost:5000';
         const fileUrl = `${hostUrl}/uploads/${cleanName}`;
         const fileNameOnly = path.basename(fileUrl);
-
         const message = await Message.create({
           senderId,
           receiverId,
@@ -158,8 +135,6 @@ module.exports = function (server) {
           fileName: fileNameOnly,
         });
         console.log('isGroup: ', isGroup);
-
-
         if (isGroup) {
           socket.to(roomId).emit('receiveMessage', message);
           socket.emit('receiveMessage', message);
@@ -173,23 +148,15 @@ module.exports = function (server) {
       }
     });
 
-
-
-
-
-
-    // 👁️‍🗨️ حدث عند قراءة الرسالة
     socket.on("messageRead", async ({ messageId, readerId }) => {
       const message = await Message.findByIdAndUpdate(
         messageId,
         { isRead: true, readAt: new Date() },
         { new: true }
       );
-
       if (message) {
         const targetUserId =
           message.senderId === readerId ? message.receiverId : message.senderId;
-
         io.emit("messageSeen", {
           messageId: message._id,
           seenBy: readerId,
@@ -198,7 +165,6 @@ module.exports = function (server) {
       }
     });
 
-    // 🔴 عند الخروج
     socket.on("disconnect", async () => {
       console.log("Disconnected:", socket.id);
       if (userId) {
