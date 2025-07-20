@@ -68,25 +68,56 @@ module.exports = function (server) {
       }
     });
 
+    // socket.on('sendMessage', async (data) => {
+    //   const { senderId, receiverId, roomId, text, timestamp } = data;
+    //   const isGroup = !!roomId;
+    //   try {
+    //     let room;
+    //     if (isGroup) {
+    //       console.log(isGroup);
+    //       const room = await ChatRoom.findById(roomId.toString());
+    //       console.log(room);
+    //       console.log(roomId);
+    //     } else {
+    //       const userIds = [senderId, receiverId];
+    //       room = await createOrGetRoom(userIds, false);
+    //     }
+
+    //     const message = await Message.create({
+    //       senderId,
+    //       receiverId,
+    //       roomId: roomId,
+    //       text,
+    //       timestamp: timestamp || new Date(),
+    //       isGroup,
+    //     });
+
+    //     if (isGroup) {
+    //       socket.to(roomId).emit('receiveMessage', message);
+    //       socket.emit('receiveMessage', message);
+    //     } else {
+    //       io.to(receiverId).emit('receivePrivateMessage', message);
+    //       io.to(senderId).emit('receivePrivateMessage', message);
+    //     }
+    //   } catch (error) {
+    //     console.error('Error sending message:', error);
+    //     socket.emit('error', { message: 'Message sending failed.' });
+    //   }
+    // });
+
+
     socket.on('sendMessage', async (data) => {
       const { senderId, receiverId, roomId, text, timestamp } = data;
       const isGroup = !!roomId;
       try {
-        let room;
-        if (isGroup) {
-          console.log(isGroup);
-          const room = await ChatRoom.findById(roomId.toString());
-          console.log(room);
-          console.log(roomId);
-        } else {
-          const userIds = [senderId, receiverId];
-          room = await createOrGetRoom(userIds, false);
-        }
+        let room = isGroup
+          ? await ChatRoom.findById(roomId)
+          : await createOrGetRoom([senderId, receiverId], false);
 
         const message = await Message.create({
           senderId,
           receiverId,
-          roomId: roomId,
+          roomId,
           text,
           timestamp: timestamp || new Date(),
           isGroup,
@@ -98,6 +129,11 @@ module.exports = function (server) {
         } else {
           io.to(receiverId).emit('receivePrivateMessage', message);
           io.to(senderId).emit('receivePrivateMessage', message);
+
+          // 🔄 Emit real-time recent chat update
+          io.to(senderId).emit('updateRecentChats', { message });
+          io.to(receiverId).emit('updateRecentChats', { message });
+          console.log(`Message sent from ${senderId} to ${receiverId}:`, message);
         }
       } catch (error) {
         console.error('Error sending message:', error);

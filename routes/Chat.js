@@ -91,7 +91,6 @@ router.post("/mark-read", auth, async (req, res) => {
 router.get("/private/recent-users", auth, async (req, res) => {
   const userId = req.user.id;
   const messages = await Message.find({
-    isGroup: false,
     $or: [{ senderId: userId }, { receiverId: userId }],
   })
     .sort({ timestamp: -1 })

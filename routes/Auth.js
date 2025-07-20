@@ -2,7 +2,7 @@ const router = require("express").Router();
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const multer = require("../middlewares/upload");
+const multerLib = require("multer");
 const upload = require("../middlewares/upload");
 
 router.post(
@@ -55,7 +55,7 @@ router.post(
       const user = await User.create(userData);
       res.status(201).json({ message: "User registered successfully", user });
     } catch (err) {
-      if (err instanceof multer.MulterError) {
+      if (err instanceof multerLib.MulterError) {
         return res.status(400).json({ message: "Image upload failed", error: err.message });
       }
       if (err.code === 11000) {
