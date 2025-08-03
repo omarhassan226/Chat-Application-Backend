@@ -15,7 +15,7 @@ router.post("/send", auth, upload.single('file'), async (req, res) => {
       receiverId,
       roomId,
       text,
-      isGroup,
+      // isGroup,
       fileUrl: `/uploads/${req.file.filename}`,
     });
     res.json(message);

@@ -27,7 +27,7 @@ module.exports = function (server) {
   const io = new Server(server, {
     cors: {
       origin: "*",
-      methods: ["GET", "POST"],
+      methods: ["GET", "POST", "PUT", "DELETE"],
     },
   });
 
@@ -67,44 +67,6 @@ module.exports = function (server) {
         io.to(targetSocketId).emit('stopTyping', { from: userId });
       }
     });
-
-    // socket.on('sendMessage', async (data) => {
-    //   const { senderId, receiverId, roomId, text, timestamp } = data;
-    //   const isGroup = !!roomId;
-    //   try {
-    //     let room;
-    //     if (isGroup) {
-    //       console.log(isGroup);
-    //       const room = await ChatRoom.findById(roomId.toString());
-    //       console.log(room);
-    //       console.log(roomId);
-    //     } else {
-    //       const userIds = [senderId, receiverId];
-    //       room = await createOrGetRoom(userIds, false);
-    //     }
-
-    //     const message = await Message.create({
-    //       senderId,
-    //       receiverId,
-    //       roomId: roomId,
-    //       text,
-    //       timestamp: timestamp || new Date(),
-    //       isGroup,
-    //     });
-
-    //     if (isGroup) {
-    //       socket.to(roomId).emit('receiveMessage', message);
-    //       socket.emit('receiveMessage', message);
-    //     } else {
-    //       io.to(receiverId).emit('receivePrivateMessage', message);
-    //       io.to(senderId).emit('receivePrivateMessage', message);
-    //     }
-    //   } catch (error) {
-    //     console.error('Error sending message:', error);
-    //     socket.emit('error', { message: 'Message sending failed.' });
-    //   }
-    // });
-
 
     socket.on('sendMessage', async (data) => {
       const { senderId, receiverId, roomId, text, timestamp } = data;
