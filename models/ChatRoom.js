@@ -5,7 +5,7 @@ const ChatRoomSchema = new Schema({
   // _id: { type: String, required: true },
   name: { type: String, default: 'Untitled Room' },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  // isGroup: { type: Boolean, default: false },
+  isGroup: Boolean,
 });
 
 // const ChatRoom = mongoose.model('ChatRoom', ChatRoomSchema);

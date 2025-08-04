@@ -1,14 +1,14 @@
 const mongoose = require("mongoose");
 
 const messageSchema = new mongoose.Schema({
-  senderId: String,
-  receiverId: String,
-  roomId: String,
+  senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  receiverId: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // Optional for group
+  roomId: { type: mongoose.Schema.Types.ObjectId, ref: "ChatRoom" },
   text: String,
+  isGroup: { type: Boolean, default: false },
+  timestamp: { type: Date, default: Date.now },
   fileUrl: String,
   fileType: String,
-  timestamp: { type: Date, default: Date.now },
-  isGroup: { type: Boolean, default: false },
   isRead: { type: Boolean, default: false },
   readAt: Date,
 });

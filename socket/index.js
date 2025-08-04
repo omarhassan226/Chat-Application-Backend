@@ -82,7 +82,7 @@ module.exports = function (server) {
           roomId,
           text,
           timestamp: timestamp || new Date(),
-          isGroup,
+          isGroup: true,
         });
 
         if (isGroup) {
@@ -126,7 +126,7 @@ module.exports = function (server) {
           receiverId,
           roomId: roomId,
           text,
-          isGroup,
+          isGroup: true,
           fileUrl,
           fileType: mimetype,
           timestamp: new Date(),
@@ -170,7 +170,8 @@ module.exports = function (server) {
         await User.findByIdAndUpdate(userId, {
           isOnline: false,
           lastSeen: lastSeenTime,
-        });
+        },
+          { new: true });
 
         io.emit("userStatus", {
           userId,

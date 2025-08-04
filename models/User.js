@@ -23,7 +23,8 @@ const userSchema = new Schema({
   image: String,
   isOnline: { type: Boolean, default: false },
   lastSeen: { type: Date, default: Date.now },
-  blockedUsers: [String]
+  blockedUsers: [String],
+  starredUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }]
 });
 
 module.exports = mongoose.model("User", userSchema);
