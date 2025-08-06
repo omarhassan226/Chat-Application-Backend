@@ -307,7 +307,13 @@ router.get("/starred-users", auth, async (req, res) => {
     const user = await User.findById(req.user.id)
       .populate("starredUsers", "-password")
       .lean();
-    res.json(user.starredUsers || []);
+
+    const starredUsers = (user.starredUsers || []).map((starredUser) => ({
+      ...starredUser,
+      isStarred: true,
+    }));
+
+    res.json(starredUsers);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
