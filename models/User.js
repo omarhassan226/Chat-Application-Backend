@@ -7,15 +7,13 @@ const userSchema = new Schema({
   email: {
     type: String,
     unique: true,
-    // required: true,
     lowercase: true,
-    trim: true
+    trim: true,
   },
 
   phone: {
     type: String,
     unique: true,
-    // required: true,
     trim: true,
   },
 
@@ -23,7 +21,7 @@ const userSchema = new Schema({
   image: String,
   isOnline: { type: Boolean, default: false },
   lastSeen: { type: Date, default: Date.now },
-  blockedUsers: [String]
+  blockedUsers: [String],
 });
 
 module.exports = mongoose.model("User", userSchema);

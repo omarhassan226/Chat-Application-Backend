@@ -1,4 +1,3 @@
-// نبدأ بكل الأساسيات
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
@@ -23,5 +22,4 @@ mongoose.connect(process.env.MONGO_URI).then(() => {
   });
 });
 
-// تفعيل الـ Socket.IO
 require("./socket")(server);

@@ -1,17 +1,21 @@
 const { Server } = require("socket.io");
 const User = require("../models/User");
 const Message = require("../models/Message");
-const fs = require('fs');
-const path = require('path');
-const ChatRoom = require('../models/ChatRoom');
+const fs = require("fs");
+const path = require("path");
+const ChatRoom = require("../models/ChatRoom");
 
 const generateRoomId = (userIds) => {
-  return userIds.map(id => id.toString()).sort().join('-');
+  return userIds
+    .map((id) => id.toString())
+    .sort()
+    .join("-");
 };
 
-// Find existing room or create a new one
 const createOrGetRoom = async (userIds, isGroup = false) => {
-  const roomId = isGroup ? new mongoose.Types.ObjectId() : generateRoomId(userIds);
+  const roomId = isGroup
+    ? new mongoose.Types.ObjectId()
+    : generateRoomId(userIds);
 
   let room = await ChatRoom.findById(roomId);
   if (!room) {
@@ -19,7 +23,7 @@ const createOrGetRoom = async (userIds, isGroup = false) => {
       _id: roomId,
       members: userIds,
       isGroup,
-      name: isGroup ? 'Group Chat' : null,
+      name: isGroup ? "Group Chat" : "Private Chat",
     });
   }
   return room;
@@ -42,44 +46,34 @@ module.exports = function (server) {
       socket.join(userId);
       userSockets.set(userId, socket.id);
       await User.findByIdAndUpdate(userId, { isOnline: true });
-      io.emit('userStatus', { userId, isOnline: true });
+      io.emit("userStatus", { userId, isOnline: true });
     }
 
-    // 🟢 عند الاتصال
     if (userId) {
       await User.findByIdAndUpdate(userId, { isOnline: true });
       io.emit("userStatus", { userId, isOnline: true });
     }
 
-    // 🏠 دخول غرفة
-    // socket.on("joinRoom", ({ roomId, userId }) => {
-    //   socket.join(roomId);
-    //   io.to(roomId).emit("userJoined", userId);
-    // });
-
-    socket.on('joinRoom', ({ roomId }) => {
+    socket.on("joinRoom", ({ roomId }) => {
       socket.join(roomId);
     });
 
-    // ⌨️ لما المستخدم يكتب
-    socket.on('typing', ({ to, userId }) => {
-      console.log('Typing from', userId, 'to', to);
+    socket.on("typing", ({ to, userId }) => {
+      console.log("Typing from", userId, "to", to);
       const targetSocketId = userSockets.get(to);
       if (targetSocketId) {
-        io.to(targetSocketId).emit('typing', { from: userId });
+        io.to(targetSocketId).emit("typing", { from: userId });
       }
     });
 
-    socket.on('stopTyping', ({ to, userId }) => {
+    socket.on("stopTyping", ({ to, userId }) => {
       const targetSocketId = userSockets.get(to);
       if (targetSocketId) {
-        io.to(targetSocketId).emit('stopTyping', { from: userId });
+        io.to(targetSocketId).emit("stopTyping", { from: userId });
       }
     });
 
-
-    // ✉️ إرسال رسالة
-    socket.on('sendMessage', async (data) => {
+    socket.on("sendMessage", async (data) => {
       const { senderId, receiverId, roomId, text, timestamp } = data;
       const isGroup = !!roomId;
 
@@ -91,9 +85,6 @@ module.exports = function (server) {
           const room = await ChatRoom.findById(roomId.toString());
           console.log(room);
           console.log(roomId);
-
-
-          // if (!room) throw new Error('Group room not found');
         } else {
           const userIds = [senderId, receiverId];
           room = await createOrGetRoom(userIds, false);
@@ -109,40 +100,44 @@ module.exports = function (server) {
         });
 
         if (isGroup) {
-          socket.to(roomId).emit('receiveMessage', message);
-          socket.emit('receiveMessage', message);
+          socket.to(roomId).emit("receiveMessage", message);
+          socket.emit("receiveMessage", message);
         } else {
-          io.to(receiverId).emit('receivePrivateMessage', message);
-          io.to(senderId).emit('receivePrivateMessage', message);
+          io.to(receiverId).emit("receivePrivateMessage", message);
+          io.to(senderId).emit("receivePrivateMessage", message);
         }
       } catch (error) {
-        console.error('Error sending message:', error);
-        socket.emit('error', { message: 'Message sending failed.' });
+        console.error("Error sending message:", error);
+        socket.emit("error", { message: "Message sending failed." });
       }
     });
 
-
-
-    socket.on('uploadMessage', async ({ metadata, buffer }) => {
-      const { senderId, receiverId, roomId, text = '', filename, mimetype } = metadata;
+    socket.on("uploadMessage", async ({ metadata, buffer }) => {
+      const {
+        senderId,
+        receiverId,
+        roomId,
+        text = "",
+        filename,
+        mimetype,
+      } = metadata;
       const isGroup = !!roomId;
 
       try {
         let room;
         if (isGroup) {
           room = await ChatRoom.findById(roomId);
-          // if (!room) throw new Error('Group room not found');
         } else {
           const userIds = [senderId, receiverId];
           room = await createOrGetRoom(userIds, false);
         }
 
-        const safe = filename.replace(/\s+/g, '_');
+        const safe = filename.replace(/\s+/g, "_");
         const cleanName = `${Date.now()}-${safe}`;
-        const savePath = path.join(__dirname, '../uploads', cleanName);
+        const savePath = path.join(__dirname, "../uploads", cleanName);
         fs.writeFileSync(savePath, Buffer.from(buffer));
 
-        const hostUrl = 'http://localhost:5000';
+        const hostUrl = process.env.BASE_URL;
         const fileUrl = `${hostUrl}/uploads/${cleanName}`;
         const fileNameOnly = path.basename(fileUrl);
 
@@ -157,28 +152,21 @@ module.exports = function (server) {
           timestamp: new Date(),
           fileName: fileNameOnly,
         });
-        console.log('isGroup: ', isGroup);
-
+        console.log("isGroup: ", isGroup);
 
         if (isGroup) {
-          socket.to(roomId).emit('receiveMessage', message);
-          socket.emit('receiveMessage', message);
+          socket.to(roomId).emit("receiveMessage", message);
+          socket.emit("receiveMessage", message);
         } else {
-          io.to(receiverId).emit('receivePrivateMessage', message);
-          io.to(senderId).emit('receivePrivateMessage', message);
+          io.to(receiverId).emit("receivePrivateMessage", message);
+          io.to(senderId).emit("receivePrivateMessage", message);
         }
       } catch (error) {
-        console.error('Error uploading message:', error);
-        socket.emit('error', { message: 'File upload failed.' });
+        console.error("Error uploading message:", error);
+        socket.emit("error", { message: "File upload failed." });
       }
     });
 
-
-
-
-
-
-    // 👁️‍🗨️ حدث عند قراءة الرسالة
     socket.on("messageRead", async ({ messageId, readerId }) => {
       const message = await Message.findByIdAndUpdate(
         messageId,
@@ -198,7 +186,6 @@ module.exports = function (server) {
       }
     });
 
-    // 🔴 عند الخروج
     socket.on("disconnect", async () => {
       console.log("Disconnected:", socket.id);
       if (userId) {

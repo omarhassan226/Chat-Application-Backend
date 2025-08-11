@@ -4,13 +4,9 @@ const ChatRoom = require("../models/ChatRoom");
 const auth = require("../middlewares/auth");
 const upload = require("../middlewares/upload");
 const User = require("../models/User");
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-
-
-
-
-router.post("/send", auth, upload.single('file'), async (req, res) => {
+router.post("/send", auth, upload.single("file"), async (req, res) => {
   try {
     const { senderId, receiverId, roomId, text } = req.body;
     const isGroup = !!roomId;
@@ -21,7 +17,6 @@ router.post("/send", auth, upload.single('file'), async (req, res) => {
       text,
       isGroup,
       fileUrl: `/uploads/${req.file.filename}`,
-      // fileType: req.file.mimetype,
     });
     res.json(message);
   } catch (error) {
@@ -29,43 +24,36 @@ router.post("/send", auth, upload.single('file'), async (req, res) => {
   }
 });
 
-
-
-
-
-// GET /chat/room/:roomId/messages
-router.get('/room/:roomId/messages', auth, async (req, res) => {
+router.get("/room/:roomId/messages", auth, async (req, res) => {
   const { roomId } = req.params;
   if (!mongoose.Types.ObjectId.isValid(roomId)) {
-    return res.status(400).json({ error: 'Invalid roomId' });
+    return res.status(400).json({ error: "Invalid roomId" });
   }
 
-  const messages = await Message.find({ roomId }).sort({ timestamp: 1 }).lean();
+  const messages = await Message.find({ roomId })
+    .sort({ timestamp: 1 })
+    .populate("senderId", "username image")
+    .lean();
   res.json(messages);
 });
 
-
-
-
-
-// POST /chat/create-room
-router.post('/create-room', auth, async (req, res) => {
+router.post("/create-room", auth, async (req, res) => {
   const { memberIds, name } = req.body;
 
   if (!Array.isArray(memberIds) || memberIds.length < 2) {
-    return res.status(400).json({ error: 'memberIds must be an array of at least two user IDs' });
+    return res
+      .status(400)
+      .json({ error: "memberIds must be an array of at least two user IDs" });
   }
 
   const isGroup = memberIds.length > 2;
   const roomName = isGroup ? name : null;
 
-  // Try to find existing room
   let room = await ChatRoom.findOne({
     isGroup,
     members: { $all: memberIds, $size: memberIds.length },
   });
 
-  // If not found, create one
   if (!room) {
     room = await ChatRoom.create({
       name: roomName,
@@ -77,9 +65,6 @@ router.post('/create-room', auth, async (req, res) => {
   res.json({ roomId: room._id });
 });
 
-
-
-
 router.get("/private/:user1/:user2", auth, async (req, res) => {
   const { user1, user2 } = req.params;
 
@@ -87,16 +72,15 @@ router.get("/private/:user1/:user2", auth, async (req, res) => {
     isGroup: false,
     $or: [
       { senderId: user1, receiverId: user2 },
-      { senderId: user2, receiverId: user1 }
-    ]
-  }).sort("timestamp");
+      { senderId: user2, receiverId: user1 },
+    ],
+  })
+    .sort("timestamp")
+    .populate("senderId", "username image")
+    .lean();
 
   res.json(messages);
 });
-
-
-
-
 
 router.get("/me", auth, async (req, res) => {
   try {
@@ -111,11 +95,6 @@ router.get("/me", auth, async (req, res) => {
   }
 });
 
-
-
-
-
-
 router.post("/mark-read", auth, async (req, res) => {
   const { messageIds } = req.body;
   const updated = await Message.updateMany(
@@ -125,48 +104,34 @@ router.post("/mark-read", auth, async (req, res) => {
   res.json({ success: true, updated: updated.modifiedCount });
 });
 
-
-
-
-
-// جلب آخر رسالة لكل محادثة خاصة
 router.get("/private/recent", auth, async (req, res) => {
   const userId = req.user.id;
-  // هنجمع كل الرسائل اللي تخص اليوزر (مرسل أو مستقبل)
   const messages = await Message.find({
     isGroup: false,
     $or: [{ senderId: userId }, { receiverId: userId }],
   })
-    .sort({ timestamp: -1 }) // نبدأ من الأحدث
+    .sort({ timestamp: -1 })
     .lean();
 
   const chatMap = new Map();
 
   for (const msg of messages) {
-    const otherUser =
-      msg.senderId === userId ? msg.receiverId : msg.senderId;
+    const otherUser = msg.senderId === userId ? msg.receiverId : msg.senderId;
 
     if (!chatMap.has(otherUser)) {
-      chatMap.set(otherUser, msg); // نحفظ أول رسالة (لأنها الأحدث)
+      chatMap.set(otherUser, msg);
     }
   }
 
-  // نرجع المحادثات كـ array
   res.json(Array.from(chatMap.values()));
 });
 
-
-
-
-
 router.get("/group/recent", auth, async (req, res) => {
   const userId = req.user.id;
-  // الخطوة 1: هات الرومات اللي المستخدم دخلها (اللي هو عضو فيها)
-  const rooms = await ChatRoom.find({ members: userId }).lean(); // ← لازم تضيف حقل members في ChatRoom
+  const rooms = await ChatRoom.find({ members: userId }).lean();
 
   const roomIds = rooms.map((room) => room._id);
 
-  // الخطوة 2: هات الرسائل بتاعة الرومات دي فقط، ومرتبة من الأحدث
   const messages = await Message.find({
     isGroup: true,
     roomId: { $in: roomIds },
@@ -174,7 +139,6 @@ router.get("/group/recent", auth, async (req, res) => {
     .sort({ timestamp: -1 })
     .lean();
 
-  // الخطوة 3: نخزن آخر رسالة لكل روم
   const roomMap = new Map();
 
   for (const msg of messages) {
@@ -190,27 +154,23 @@ router.get("/group/recent", auth, async (req, res) => {
   res.json(Array.from(roomMap.values()));
 });
 
-
-
-
 router.post("/block", auth, async (req, res) => {
   const userId = req.user.id;
   const { targetUserId } = req.body;
 
   await User.findByIdAndUpdate(userId, {
-    $addToSet: { blockedUsers: targetUserId } // ← تمنع التكرار
+    $addToSet: { blockedUsers: targetUserId },
   });
 
   res.json({ success: true, message: "User blocked" });
 });
 
-// إلغاء الحظر
 router.post("/unblock", auth, async (req, res) => {
   const userId = req.user.id;
   const { targetUserId } = req.body;
 
   await User.findByIdAndUpdate(userId, {
-    $pull: { blockedUsers: targetUserId }
+    $pull: { blockedUsers: targetUserId },
   });
 
   res.json({ success: true, message: "User unblocked" });
@@ -235,24 +195,19 @@ router.post("/send-file", auth, upload.single("file"), async (req, res) => {
   res.json(message);
 });
 
-
-
-
 router.get("/users-filter", auth, async (req, res) => {
   try {
     const { q } = req.query;
     if (!q) {
-      return res.status(400).json({ message: "Query parameter 'q' is required" });
+      return res
+        .status(400)
+        .json({ message: "Query parameter 'q' is required" });
     }
 
     const regex = new RegExp(q, "i");
 
     const users = await User.find({
-      $or: [
-        { username: regex },
-        { email: regex },
-        { phone: regex }
-      ]
+      $or: [{ username: regex }, { email: regex }, { phone: regex }],
     })
       .select("-password")
       .lean();
@@ -264,14 +219,9 @@ router.get("/users-filter", auth, async (req, res) => {
   }
 });
 
-
-
-
 router.get("/users", auth, async (req, res) => {
   try {
-    const users = await User.find({})
-      .select("-password")
-      .lean();
+    const users = await User.find({}).select("-password").lean();
 
     res.json(users);
   } catch (err) {
@@ -279,7 +229,5 @@ router.get("/users", auth, async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
-
-
 
 module.exports = router;
