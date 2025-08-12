@@ -240,24 +240,141 @@ router.get("/users-filter", auth, async (req, res) => {
 router.get("/users", auth, async (req, res) => {
   try {
     const currentUserId = req.user.id;
-    const currentUser = await User.findById(currentUserId).select('starredUsers').lean();
-    const allUsers = await User.find({ _id: { $ne: currentUserId } }) // exclude self
-      .select("-password")
+    const userObjectId = new mongoose.Types.ObjectId(currentUserId);
+
+    // 1. المستخدم الحالي و الـ starred
+    const currentUser = await User.findById(currentUserId)
+      .select("starredUsers")
       .lean();
 
     const starredSet = new Set(currentUser.starredUsers.map(id => id.toString()));
 
-    const usersWithFlag = allUsers.map(user => ({
-      ...user,
-      isStarred: starredSet.has(user._id.toString()) // 👈 Add the flag here
-    }));
+    // 2. كل اليوزرز ماعدا نفسك
+    const allUsers = await User.find({ _id: { $ne: currentUserId } })
+      .select("-password")
+      .lean();
 
-    // Optional: sort starred users on top
-    usersWithFlag.sort((a, b) => Number(b.isStarred) - Number(a.isStarred));
+    // 3. الرسائل الخاصة
+    const privateMessages = await Message.find({
+      $or: [
+        { senderId: currentUserId },
+        { receiverId: currentUserId }
+      ]
+    })
+      .sort({ timestamp: -1 })
+      .lean();
 
-    res.json(usersWithFlag);
+    const privateMap = new Map();
+
+    for (const msg of privateMessages) {
+      const otherUserId = msg.senderId.toString() === currentUserId
+        ? msg.receiverId?.toString()
+        : msg.senderId?.toString();
+
+      if (!privateMap.has(otherUserId)) {
+        privateMap.set(otherUserId, []);
+      }
+
+      privateMap.get(otherUserId).push(msg);
+    }
+
+    // 4. جروبات المستخدم
+    const rooms = await ChatRoom.find({ members: userObjectId }).lean();
+
+    const roomIds = rooms.map(room => room._id);
+
+    const groupMessages = await Message.find({
+      isGroup: true,
+      roomId: { $in: roomIds }
+    })
+      .sort({ timestamp: -1 })
+      .lean();
+
+    const groupMap = new Map();
+
+    for (const msg of groupMessages) {
+      const roomId = msg.roomId.toString();
+      if (!groupMap.has(roomId)) {
+        groupMap.set(roomId, []);
+      }
+      groupMap.get(roomId).push(msg);
+    }
+
+    const userGroupMap = new Map(); // userId -> array of group messages
+
+    for (const room of rooms) {
+      const messages = groupMap.get(room._id.toString()) || [];
+      if (messages.length === 0) continue;
+
+      for (const member of room.members) {
+        const memberId = member.toString();
+        if (memberId === currentUserId) continue;
+
+        if (!userGroupMap.has(memberId)) {
+          userGroupMap.set(memberId, []);
+        }
+
+        userGroupMap.get(memberId).push({
+          roomId: room._id,
+          roomName: room.name,
+          messages
+        });
+      }
+    }
+
+    // 5. الدمج النهائي
+    const usersWithExtras = allUsers.map(user => {
+      const userIdStr = user._id.toString();
+      const privateMsgs = privateMap.get(userIdStr) || [];
+      const groupConvos = userGroupMap.get(userIdStr) || [];
+
+      let lastMessage = null;
+      let lastMessageTime = null;
+      let messageCount = privateMsgs.length;
+      let roomId = null;
+
+      if (privateMsgs.length > 0) {
+        lastMessage = privateMsgs[0];
+        lastMessageTime = privateMsgs[0].timestamp;
+      }
+
+      // لو الجروب فيه رسائل أحدث
+      for (const convo of groupConvos) {
+        const groupLastMsg = convo.messages[0];
+        if (!lastMessageTime || new Date(groupLastMsg.timestamp) > new Date(lastMessageTime)) {
+          lastMessage = groupLastMsg;
+          lastMessageTime = groupLastMsg.timestamp;
+          roomId = convo.roomId;
+        }
+        messageCount += convo.messages.length;
+      }
+
+      return {
+        ...user,
+        isStarred: starredSet.has(userIdStr),
+        lastMessage: lastMessage || null,
+        lastMessageTime: lastMessageTime || null,
+        messageCount,
+        roomId: roomId || null,
+      };
+    });
+
+    // 6. ترتيب حسب آخر رسالة
+    // 6. ترتيب حسب starred ثم آخر رسالة
+    usersWithExtras.sort((a, b) => {
+      if (a.isStarred !== b.isStarred) {
+        return b.isStarred - a.isStarred;
+      }
+
+      const timeA = new Date(a.lastMessageTime || 0);
+      const timeB = new Date(b.lastMessageTime || 0);
+      return timeB - timeA;
+    });
+
+
+    res.json(usersWithExtras);
   } catch (err) {
-    console.error(err);
+    console.error("Error in /users:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
@@ -329,7 +446,7 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
 
     // 1. Private Messages
     const privateMessages = await Message.find({
-      isGroup: false,
+      // isGroup: false,
       $or: [{ senderId: userId }, { receiverId: userId }],
     })
       .sort({ timestamp: -1 })
@@ -338,11 +455,11 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
     const privateMap = new Map();
 
     for (const msg of privateMessages) {
-      const otherUserId = msg.senderId.toString() === userId ? msg.receiverId.toString() : msg.senderId.toString();
+      const otherUserId = msg.senderId?.toString() === userId ? msg.receiverId?.toString() : msg.senderId.toString();
       // if (!privateMap.has(otherUserId)) {
       //   privateMap.set(otherUserId, []);
       // }
-      privateMap.get(otherUserId).push(msg);
+      privateMap.get(otherUserId)?.push(msg);
     }
 
     const privateUserIds = Array.from(privateMap.keys());
@@ -363,10 +480,9 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
 
     // 2. Group Messages
     const rooms = await ChatRoom.find({
-      isGroup: true,
+      // isGroup: true,
       members: userObjectId,
     }).lean();
-    console.log("Found rooms:", rooms);
 
     const roomIds = rooms.map((room) => room._id);
 
@@ -376,7 +492,6 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
     })
       .sort({ timestamp: -1 })
       .lean();
-    console.log("Found group messages:", groupMessages);
 
 
     const groupMap = new Map();
@@ -388,7 +503,6 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
       }
       groupMap.get(roomId).push(msg);
     }
-    console.log("Grouped messages:", groupMap);
 
     for (const room of rooms) {
       const messages = groupMap.get(room._id.toString()) || [];
@@ -413,6 +527,50 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+// Add to your chat routes file
+router.get("/room/:roomId/users-with-messages", auth, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    // 1. Validate room ID
+    if (!mongoose.Types.ObjectId.isValid(roomId)) {
+      return res.status(400).json({ error: "Invalid room ID" });
+    }
+
+    // 2. Find the chat room and populate member users
+    const room = await ChatRoom.findById(roomId)
+      .populate("members", "-password") // exclude passwords
+      .lean();
+
+    if (!room) {
+      return res.status(404).json({ error: "Room not found" });
+    }
+
+    // 3. Find all messages in the room, sorted by timestamp
+    const messages = await Message.find({ roomId })
+      .sort({ timestamp: 1 })
+      .lean();
+
+    // Optional: Group messages by user (if needed)
+    const messagesByUser = room.members.map(user => ({
+      user,
+      messages: messages.filter(msg => msg.senderId.toString() === user._id.toString())
+    }));
+
+    res.json({
+      roomId: room._id,
+      roomName: room.name,
+      membersWithMessages: messagesByUser,
+      allMessages: messages,
+    });
+
+  } catch (err) {
+    console.error("Error fetching room users with messages:", err);
+    res.status(500).json({ error: "Server error", details: err.message });
+  }
+});
+
 
 
 
