@@ -4,9 +4,9 @@ const ChatRoom = require("../models/ChatRoom");
 const auth = require("../middlewares/auth");
 const upload = require("../middlewares/upload");
 const User = require("../models/User");
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-router.post("/send", auth, upload.single('file'), async (req, res) => {
+router.post("/send", auth, upload.single("file"), async (req, res) => {
   try {
     const { senderId, receiverId, roomId, text } = req.body;
     const isGroup = !!roomId;
@@ -24,19 +24,21 @@ router.post("/send", auth, upload.single('file'), async (req, res) => {
   }
 });
 
-router.get('/room/:roomId/messages', auth, async (req, res) => {
+router.get("/room/:roomId/messages", auth, async (req, res) => {
   const { roomId } = req.params;
   if (!mongoose.Types.ObjectId.isValid(roomId)) {
-    return res.status(400).json({ error: 'Invalid roomId' });
+    return res.status(400).json({ error: "Invalid roomId" });
   }
   const messages = await Message.find({ roomId }).sort({ timestamp: 1 }).lean();
   res.json(messages);
 });
 
-router.post('/create-room', auth, async (req, res) => {
+router.post("/create-room", auth, async (req, res) => {
   const { memberIds, name } = req.body;
   if (!Array.isArray(memberIds) || memberIds.length < 2) {
-    return res.status(400).json({ error: 'memberIds must be an array of at least two user IDs' });
+    return res
+      .status(400)
+      .json({ error: "memberIds must be an array of at least two user IDs" });
   }
   const isGroup = memberIds.length > 2;
   const roomName = isGroup ? name : null;
@@ -60,8 +62,8 @@ router.get("/private/:user1/:user2", auth, async (req, res) => {
     isGroup: false,
     $or: [
       { senderId: user1, receiverId: user2 },
-      { senderId: user2, receiverId: user1 }
-    ]
+      { senderId: user2, receiverId: user1 },
+    ],
   }).sort("timestamp");
   res.json(messages);
 });
@@ -81,9 +83,15 @@ router.get("/me", auth, async (req, res) => {
 
 router.post("/mark-read", auth, async (req, res) => {
   const { messageIds } = req.body;
-  const updated = await Message.updateMany(
-    { _id: { $in: messageIds }, receiverId: req.user.id },
-    { $set: { isRead: true, readAt: new Date() } }
+  await Message.updateMany(
+    {
+      senderId: otherUserId,
+      receiverId: currentUserId,
+      isRead: false,
+    },
+    {
+      $set: { isRead: true, readAt: new Date() },
+    }
   );
   res.json({ success: true, updated: updated.modifiedCount });
 });
@@ -91,8 +99,10 @@ router.post("/mark-read", auth, async (req, res) => {
 router.get("/private/recent-users", auth, async (req, res) => {
   const userId = req.user.id;
 
-  const currentUser = await User.findById(userId).select('starredUsers').lean();
-  const starredSet = new Set(currentUser.starredUsers.map(id => id.toString()));
+  const currentUser = await User.findById(userId).select("starredUsers").lean();
+  const starredSet = new Set(
+    currentUser.starredUsers.map((id) => id.toString())
+  );
 
   const messages = await Message.find({
     $or: [{ senderId: userId }, { receiverId: userId }],
@@ -113,15 +123,35 @@ router.get("/private/recent-users", auth, async (req, res) => {
     .select("-password")
     .lean();
 
-  const result = users.map((user) => ({
-    ...user,
-    isStarred: starredSet.has(user._id.toString()), // 👈 Add the flag here
-    lastMessage: userLastMessageMap.get(user._id.toString()),
-  }));
+  const result = users.map((user) => {
+    const userIdStr = user._id.toString();
+
+    // الرسائل بين المستخدم الحالي وده
+    const relatedMessages = messages.filter(
+      (msg) =>
+        (msg.senderId.toString() === userId &&
+          msg.receiverId?.toString() === userIdStr) ||
+        (msg.senderId.toString() === userIdStr &&
+          msg.receiverId?.toString() === userId)
+    );
+
+    const unreadCount = relatedMessages.filter(
+      (msg) => msg.receiverId?.toString() === userId && !msg.isRead
+    ).length;
+
+    return {
+      ...user,
+      isStarred: starredSet.has(userIdStr),
+      lastMessage: userLastMessageMap.get(userIdStr),
+      unreadCount,
+    };
+  });
 
   result.sort((a, b) => {
     if (b.isStarred !== a.isStarred) return b.isStarred - a.isStarred; // starred first
-    return new Date(b.lastMessage.timestamp) - new Date(a.lastMessage.timestamp);
+    return (
+      new Date(b.lastMessage.timestamp) - new Date(a.lastMessage.timestamp)
+    );
   });
 
   res.json(result);
@@ -148,7 +178,7 @@ router.get("/group/recent-users", auth, async (req, res) => {
     const latestMessages = await Message.aggregate([
       {
         $match: {
-          isGroup: true,
+          isGroup: false,
           roomId: { $in: groupRooms.map((room) => room._id) },
         },
       },
@@ -170,25 +200,36 @@ router.get("/group/recent-users", auth, async (req, res) => {
     });
 
     // 4. Combine with room details
-    const result = groupRooms
-      .map((room) => {
+    const result = await Promise.all(
+      groupRooms.map(async (room) => {
         const lastMessage = lastMessageMap.get(room._id.toString());
         if (!lastMessage) return null;
+
+        // نحسب عدد الرسائل الغير مقروءة في الجروب ده من غير المستخدم الحالي
+        const unreadCount = await Message.countDocuments({
+          roomId: room._id,
+          senderId: { $ne: userId },
+          readBy: { $ne: userId },
+        });
 
         return {
           roomId: room._id,
           roomName: room.name,
           members: room.members.filter((id) => id.toString() !== userId),
           lastMessage,
+          unreadCount, // 👈 ده الجديد
         };
       })
+    );
+
+    const sortedResult = result
       .filter(Boolean)
       .sort(
         (a, b) =>
           new Date(b.lastMessage.timestamp) - new Date(a.lastMessage.timestamp)
       );
 
-    res.json(result);
+    res.json(sortedResult);
   } catch (error) {
     console.error("Error in /group/recent-users:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -199,40 +240,146 @@ router.get("/users-filter", auth, async (req, res) => {
   try {
     const { q } = req.query;
     if (!q) {
-      return res.status(400).json({ message: "Query parameter 'q' is required" });
+      return res
+        .status(400)
+        .json({ message: "Query parameter 'q' is required" });
     }
 
     const currentUserId = req.user.id;
+    const userObjectId = new mongoose.Types.ObjectId(currentUserId);
 
-    // Get current user's starredUsers list
-    const currentUser = await User.findById(currentUserId).select('starredUsers').lean();
-    const starredSet = new Set(currentUser.starredUsers.map(id => id.toString()));
+    // starred users list
+    const currentUser = await User.findById(currentUserId)
+      .select("starredUsers")
+      .lean();
+
+    const starredSet = new Set(
+      currentUser.starredUsers.map((id) => id.toString())
+    );
 
     const regex = new RegExp(q, "i");
 
-    // Search all users (excluding self)
-    const users = await User.find({
+    // filter users excluding self
+    const allUsers = await User.find({
       _id: { $ne: currentUserId },
-      $or: [
-        { username: regex },
-        { email: regex },
-        { phone: regex }
-      ]
+      $or: [{ username: regex }, { email: regex }, { phone: regex }],
     })
       .select("-password")
       .lean();
 
-    const usersWithFlag = users.map(user => ({
-      ...user,
-      isStarred: starredSet.has(user._id.toString())
-    }));
+    // private messages
+    const privateMessages = await Message.find({
+      $or: [{ senderId: currentUserId }, { receiverId: currentUserId }],
+    })
+      .sort({ timestamp: -1 })
+      .lean();
 
-    // Optional: Sort starred users to top
-    usersWithFlag.sort((a, b) => Number(b.isStarred) - Number(a.isStarred));
+    const privateMap = new Map();
+    for (const msg of privateMessages) {
+      const otherUserId =
+        msg.senderId.toString() === currentUserId
+          ? msg.receiverId?.toString()
+          : msg.senderId?.toString();
 
-    res.json(usersWithFlag);
+      if (!privateMap.has(otherUserId)) {
+        privateMap.set(otherUserId, []);
+      }
+      privateMap.get(otherUserId).push(msg);
+    }
+
+    // user’s group chats
+    const rooms = await ChatRoom.find({ members: userObjectId }).lean();
+    const roomIds = rooms.map((room) => room._id);
+
+    const groupMessages = await Message.find({
+      isGroup: true,
+      roomId: { $in: roomIds },
+    })
+      .sort({ timestamp: -1 })
+      .lean();
+
+    const groupMap = new Map();
+    for (const msg of groupMessages) {
+      const roomId = msg.roomId.toString();
+      if (!groupMap.has(roomId)) {
+        groupMap.set(roomId, []);
+      }
+      groupMap.get(roomId).push(msg);
+    }
+
+    const userGroupMap = new Map();
+    for (const room of rooms) {
+      const messages = groupMap.get(room._id.toString()) || [];
+      if (messages.length === 0) continue;
+
+      for (const member of room.members) {
+        const memberId = member.toString();
+        if (memberId === currentUserId) continue;
+
+        if (!userGroupMap.has(memberId)) {
+          userGroupMap.set(memberId, []);
+        }
+
+        userGroupMap.get(memberId).push({
+          roomId: room._id,
+          roomName: room.name,
+          messages,
+        });
+      }
+    }
+
+    // merge extras into filtered users
+    const usersWithExtras = allUsers.map((user) => {
+      const userIdStr = user._id.toString();
+      const privateMsgs = privateMap.get(userIdStr) || [];
+      const groupConvos = userGroupMap.get(userIdStr) || [];
+
+      let lastMessage = null;
+      let lastMessageTime = null;
+      let messageCount = privateMsgs.length;
+      let roomId = null;
+
+      if (privateMsgs.length > 0) {
+        lastMessage = privateMsgs[0];
+        lastMessageTime = privateMsgs[0].timestamp;
+      }
+
+      for (const convo of groupConvos) {
+        const groupLastMsg = convo.messages[0];
+        if (
+          !lastMessageTime ||
+          new Date(groupLastMsg.timestamp) > new Date(lastMessageTime)
+        ) {
+          lastMessage = groupLastMsg;
+          lastMessageTime = groupLastMsg.timestamp;
+          roomId = convo.roomId;
+        }
+        messageCount += convo.messages.length;
+      }
+
+      return {
+        ...user,
+        isStarred: starredSet.has(userIdStr),
+        lastMessage: lastMessage || null,
+        lastMessageTime: lastMessageTime || null,
+        messageCount,
+        roomId: roomId || null,
+      };
+    });
+
+    // sort by starred, then last message time
+    usersWithExtras.sort((a, b) => {
+      if (a.isStarred !== b.isStarred) {
+        return b.isStarred - a.isStarred;
+      }
+      const timeA = new Date(a.lastMessageTime || 0);
+      const timeB = new Date(b.lastMessageTime || 0);
+      return timeB - timeA;
+    });
+
+    res.json(usersWithExtras);
   } catch (err) {
-    console.error(err);
+    console.error("Error in /users-filter:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
@@ -247,7 +394,9 @@ router.get("/users", auth, async (req, res) => {
       .select("starredUsers")
       .lean();
 
-    const starredSet = new Set(currentUser.starredUsers.map(id => id.toString()));
+    const starredSet = new Set(
+      currentUser.starredUsers.map((id) => id.toString())
+    );
 
     // 2. كل اليوزرز ماعدا نفسك
     const allUsers = await User.find({ _id: { $ne: currentUserId } })
@@ -256,10 +405,7 @@ router.get("/users", auth, async (req, res) => {
 
     // 3. الرسائل الخاصة
     const privateMessages = await Message.find({
-      $or: [
-        { senderId: currentUserId },
-        { receiverId: currentUserId }
-      ]
+      $or: [{ senderId: currentUserId }, { receiverId: currentUserId }],
     })
       .sort({ timestamp: -1 })
       .lean();
@@ -267,9 +413,10 @@ router.get("/users", auth, async (req, res) => {
     const privateMap = new Map();
 
     for (const msg of privateMessages) {
-      const otherUserId = msg.senderId.toString() === currentUserId
-        ? msg.receiverId?.toString()
-        : msg.senderId?.toString();
+      const otherUserId =
+        msg.senderId.toString() === currentUserId
+          ? msg.receiverId?.toString()
+          : msg.senderId?.toString();
 
       if (!privateMap.has(otherUserId)) {
         privateMap.set(otherUserId, []);
@@ -281,11 +428,11 @@ router.get("/users", auth, async (req, res) => {
     // 4. جروبات المستخدم
     const rooms = await ChatRoom.find({ members: userObjectId }).lean();
 
-    const roomIds = rooms.map(room => room._id);
+    const roomIds = rooms.map((room) => room._id);
 
     const groupMessages = await Message.find({
       isGroup: true,
-      roomId: { $in: roomIds }
+      roomId: { $in: roomIds },
     })
       .sort({ timestamp: -1 })
       .lean();
@@ -317,13 +464,14 @@ router.get("/users", auth, async (req, res) => {
         userGroupMap.get(memberId).push({
           roomId: room._id,
           roomName: room.name,
-          messages
+          messages,
         });
       }
     }
 
     // 5. الدمج النهائي
-    const usersWithExtras = allUsers.map(user => {
+    // بداخل الراوتر GET /users
+    const usersWithExtras = allUsers.map((user) => {
       const userIdStr = user._id.toString();
       const privateMsgs = privateMap.get(userIdStr) || [];
       const groupConvos = userGroupMap.get(userIdStr) || [];
@@ -333,20 +481,45 @@ router.get("/users", auth, async (req, res) => {
       let messageCount = privateMsgs.length;
       let roomId = null;
 
-      if (privateMsgs.length > 0) {
-        lastMessage = privateMsgs[0];
-        lastMessageTime = privateMsgs[0].timestamp;
-      }
+      // ✅ نحسب عدد الرسائل الخاصة اللي مبعتالي ومش مقروءة
+      const unreadPrivate = privateMsgs.filter(
+        (msg) =>
+          msg.senderId.toString() === userIdStr &&
+          msg.receiverId?.toString() === currentUserId &&
+          !msg.isRead
+      ).length;
 
-      // لو الجروب فيه رسائل أحدث
+      // ✅ لو حبيت تحسب unread في الجروبات (بنفس الطريقة)
+      let unreadGroup = 0;
       for (const convo of groupConvos) {
+        const groupUnread = convo.messages.filter(
+          (msg) => !msg.isRead && msg.senderId.toString() !== currentUserId
+        ).length;
+
+        unreadGroup += groupUnread;
+
         const groupLastMsg = convo.messages[0];
-        if (!lastMessageTime || new Date(groupLastMsg.timestamp) > new Date(lastMessageTime)) {
+        if (
+          !lastMessageTime ||
+          new Date(groupLastMsg.timestamp) > new Date(lastMessageTime)
+        ) {
           lastMessage = groupLastMsg;
           lastMessageTime = groupLastMsg.timestamp;
           roomId = convo.roomId;
         }
+
         messageCount += convo.messages.length;
+      }
+
+      if (privateMsgs.length > 0) {
+        if (
+          !lastMessageTime ||
+          new Date(privateMsgs[0].timestamp) > new Date(lastMessageTime)
+        ) {
+          lastMessage = privateMsgs[0];
+          lastMessageTime = privateMsgs[0].timestamp;
+          roomId = null;
+        }
       }
 
       return {
@@ -356,10 +529,10 @@ router.get("/users", auth, async (req, res) => {
         lastMessageTime: lastMessageTime || null,
         messageCount,
         roomId: roomId || null,
+        unreadCount: unreadPrivate + unreadGroup, // ✅ هنا عدد الرسائل اللي isRead = false
       };
     });
 
-    // 6. ترتيب حسب آخر رسالة
     // 6. ترتيب حسب starred ثم آخر رسالة
     usersWithExtras.sort((a, b) => {
       if (a.isStarred !== b.isStarred) {
@@ -370,7 +543,6 @@ router.get("/users", auth, async (req, res) => {
       const timeB = new Date(b.lastMessageTime || 0);
       return timeB - timeA;
     });
-
 
     res.json(usersWithExtras);
   } catch (err) {
@@ -455,7 +627,10 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
     const privateMap = new Map();
 
     for (const msg of privateMessages) {
-      const otherUserId = msg.senderId?.toString() === userId ? msg.receiverId?.toString() : msg.senderId.toString();
+      const otherUserId =
+        msg.senderId?.toString() === userId
+          ? msg.receiverId?.toString()
+          : msg.senderId.toString();
       // if (!privateMap.has(otherUserId)) {
       //   privateMap.set(otherUserId, []);
       // }
@@ -471,7 +646,7 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
     for (const user of privateUsers) {
       const messages = privateMap.get(user._id.toString());
       result.push({
-        type: 'private',
+        type: "private",
         user,
         messages,
         lastMessageTime: messages[0]?.timestamp,
@@ -493,7 +668,6 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
       .sort({ timestamp: -1 })
       .lean();
 
-
     const groupMap = new Map();
 
     for (const msg of groupMessages) {
@@ -509,7 +683,7 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
       if (messages.length === 0) continue;
 
       result.push({
-        type: 'group',
+        type: "group",
         roomId: room._id,
         roomName: room.name,
         members: room.members,
@@ -519,7 +693,9 @@ router.get("/messages/all-conversations", auth, async (req, res) => {
     }
 
     // Final sort
-    result.sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
+    result.sort(
+      (a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime)
+    );
 
     res.json(result);
   } catch (err) {
@@ -553,9 +729,11 @@ router.get("/room/:roomId/users-with-messages", auth, async (req, res) => {
       .lean();
 
     // Optional: Group messages by user (if needed)
-    const messagesByUser = room.members.map(user => ({
+    const messagesByUser = room.members.map((user) => ({
       user,
-      messages: messages.filter(msg => msg.senderId.toString() === user._id.toString())
+      messages: messages.filter(
+        (msg) => msg.senderId.toString() === user._id.toString()
+      ),
     }));
 
     res.json({
@@ -564,14 +742,10 @@ router.get("/room/:roomId/users-with-messages", auth, async (req, res) => {
       membersWithMessages: messagesByUser,
       allMessages: messages,
     });
-
   } catch (err) {
     console.error("Error fetching room users with messages:", err);
     res.status(500).json({ error: "Server error", details: err.message });
   }
 });
-
-
-
 
 module.exports = router;

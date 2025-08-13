@@ -5,7 +5,7 @@ const messageSchema = new mongoose.Schema({
   receiverId: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // Optional for group
   roomId: { type: mongoose.Schema.Types.ObjectId, ref: "ChatRoom" },
   text: String,
-  isGroup: { type: Boolean, default: false },
+  isGroup: Boolean,
   timestamp: { type: Date, default: Date.now },
   fileUrl: String,
   fileType: String,
